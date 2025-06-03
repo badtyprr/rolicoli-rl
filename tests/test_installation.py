@@ -76,6 +76,7 @@ def test_imports():
         import triton
         print("✓ Triton:", triton.__version__)
     except ImportError:
+        import platform
         if platform.system() == "Windows":
             print("ℹ️  Triton not available on Windows (this is normal)")
         else:
@@ -89,6 +90,7 @@ def test_pytorch_27_features():
 
     try:
         import torch
+        import platform
 
         # Test torch.compile (major feature in PyTorch 2.x)
         try:
@@ -334,6 +336,7 @@ if __name__ == "__main__":
 
     # GPU recommendations
     import torch
+    import platform
 
     if torch.cuda.is_available():
         print("\n🚀 GPU Acceleration Available!")

@@ -280,6 +280,10 @@ class GameState:
                 "lost_zone": self.player2_lost_zone
             }
 
+    def get_opponent_state(self, player: int) -> Dict[str, Any]:
+        """Get opponent's state"""
+        return self.get_player_state(3 - player)
+
 
 @dataclass
 class Action:
@@ -855,7 +859,7 @@ class GameEngine:
                          opponent_player: int) -> None:
         """Handle Pokemon knockout"""
         player_state = self.state.get_player_state(owner_player)
-        opponent_state = self.state.get_opponent_state(owner_player)
+        opponent_state = self.state.get_player_state(opponent_player)
 
         # Move to discard with all attached cards
         player_state["discard"].append(pokemon)

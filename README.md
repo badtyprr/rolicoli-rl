@@ -8,7 +8,7 @@
 A state-of-the-art reinforcement learning system for training AI agents to play the Pokemon Trading Card Game. This project implements modern deep RL algorithms, neural architectures, and training infrastructure to create competitive Pokemon TCG players.
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/25.png" alt="Pikachu" width="200"/>
+  <img src="https://images.wikidexcdn.net/mwuploads/wikidex/thumb/0/08/latest/20190708232850/Rolycoly.png/1200px-Rolycoly.png" alt="RolyColy" width="200"/>
 </p>
 
 ## 🌟 Key Features

@@ -733,14 +733,14 @@ leaderboard = orchestrator.tournament.get_leaderboard()
     print("\n=== MONITORING ===")
     print("1. TensorBoard: tensorboard --logdir=experiments")
     print("2. W&B: Check https://wandb.ai/your-project")
-    print("3. Checkpoints: experiments/<name>/checkpoints/")
-    
+    print("3. Checkpoints: experiments/<n>/checkpoints/")
+
     print("\n=== GPU OPTIMIZATION TIPS ===")
     print("• Use larger batch sizes (128-256) for better GPU utilization")
     print("• Enable mixed precision for 2x memory efficiency")
     print("• Monitor GPU usage with nvidia-smi")
     print("• Use gradient accumulation if memory limited")
-    
+
     print("\nReady for production-grade training!")
 
 

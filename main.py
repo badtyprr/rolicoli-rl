@@ -423,7 +423,7 @@ class PokemonTCGEnv(gym.Env):
         return {
             "bench_size": len(player_state["bench"]),
             "total_energy": sum(
-                p.attached_energy.values() for p in [player_state["active"]] + player_state["bench"] if p),
+                sum(p.attached_energy.values()) for p in [player_state["active"]] + player_state["bench"] if p),
             "prizes_left": len(player_state["prizes"]),
             "opp_prizes_left": len(opp_state["prizes"]),
             "hand_size": len(player_state["hand"]),
@@ -775,6 +775,10 @@ class SelfPlayManager:
                 del self.elo_ratings[weakest[0]]
 
 
+# Import DeckBuilder from pokemon_tcg_rl
+from pokemon_tcg_rl import DeckBuilder
+
+
 def main():
     """Demonstrate the modern RL system"""
     print("╔══════════════════════════════════════════════════════╗")
@@ -812,6 +816,7 @@ def main():
     print("   ✓ Checkpoint management")
     print("   ✓ Tensorboard/W&B logging ready")
     print("   ✓ Unit test structure")
+    print("   ✓ torch.compile() support (install triton for 10-20% speedup)")
 
     print("\n=== USAGE EXAMPLE ===")
     print("""
@@ -847,6 +852,7 @@ for episode in range(10000):
     print("- GameEngine for rule enforcement")
     print("- DraftEnvironment for draft training")
     print("- All existing game mechanics")
+    print("- Advanced training features in training.py")
 
     print("\n=== NEXT STEPS ===")
     print("1. Implement DQN/Rainbow for comparison")
