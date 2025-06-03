@@ -126,20 +126,20 @@ class Ability:
 
 @dataclass
 class Card:
-    """Base class for all cards"""
+    """Base class for all cards - only required fields, no defaults"""
     name: str
     set_code: str
     number: str
     card_type: CardType
-    regulation_mark: Optional[str] = None
-    rarity: Optional[str] = None
 
 
 @dataclass
 class PokemonCard(Card):
     """Represents a Pokemon card"""
+    # Required fields specific to PokemonCard
     hp: int
     stage: str  # "Basic", "Stage 1", "Stage 2", "V", "ex", etc.
+    # Optional fields (all defaults must come after required fields)
     evolves_from: Optional[str] = None
     pokemon_type: Optional[EnergyType] = None  # Primary type
     attacks: List[Attack] = field(default_factory=list)
@@ -149,6 +149,8 @@ class PokemonCard(Card):
     resistance: Optional[EnergyType] = None
     resistance_amount: int = 20  # Default resistance amount
     retreat_cost: int = 0
+    regulation_mark: Optional[str] = None
+    rarity: Optional[str] = None
 
     def __post_init__(self):
         self.card_type = CardType.POKEMON
@@ -202,8 +204,12 @@ class PokemonCard(Card):
 @dataclass
 class TrainerCard(Card):
     """Represents a Trainer card"""
+    # Required fields
     trainer_type: TrainerType
     effect_text: str
+    # Optional fields
+    regulation_mark: Optional[str] = None
+    rarity: Optional[str] = None
 
     def __post_init__(self):
         self.card_type = CardType.TRAINER
@@ -212,9 +218,13 @@ class TrainerCard(Card):
 @dataclass
 class EnergyCard(Card):
     """Represents an Energy card"""
+    # Required fields
     energy_type: EnergyType
+    # Optional fields
     energy_provided: Dict[EnergyType, int] = field(default_factory=dict)
     is_special: bool = False
+    regulation_mark: Optional[str] = None
+    rarity: Optional[str] = None
 
     def __post_init__(self):
         self.card_type = CardType.ENERGY
@@ -358,6 +368,7 @@ class CardDatabase:
             name=data.get("name", "Unknown"),
             set_code=data.get("set_code", ""),
             number=data.get("number", ""),
+            card_type=CardType.POKEMON,  # Add this line!
             hp=data.get("hp", 50),
             stage=data.get("stage", "Basic"),
             evolves_from=data.get("evolves_from"),
@@ -387,6 +398,7 @@ class CardDatabase:
             name=data.get("name", "Unknown"),
             set_code=data.get("set_code", ""),
             number=data.get("number", ""),
+            card_type=CardType.TRAINER,  # Add this line!
             trainer_type=trainer_type,
             effect_text=data.get("effect", ""),
             regulation_mark=data.get("regulation_mark"),
@@ -401,6 +413,7 @@ class CardDatabase:
             name=data.get("name", "Unknown Energy"),
             set_code=data.get("set_code", ""),
             number=data.get("number", ""),
+            card_type=CardType.ENERGY,  # Add this line!
             energy_type=energy_type or EnergyType.COLORLESS,
             is_special="Basic" not in data.get("name", ""),
             regulation_mark=data.get("regulation_mark"),
@@ -575,12 +588,15 @@ class GameEngine:
     def _handle_mulligans(self) -> None:
         """Handle mulligan rule for both players"""
         mulligans = {1: 0, 2: 0}
+        MAX_MULLIGANS = 10  # Prevent infinite loops
 
         for player in [1, 2]:
             player_state = self.state.get_player_state(player)
 
-            while not self._has_basic_pokemon(player_state["hand"]):
+            mulligan_count = 0
+            while not self._has_basic_pokemon(player_state["hand"]) and mulligan_count < MAX_MULLIGANS:
                 mulligans[player] += 1
+                mulligan_count += 1
 
                 # Return hand to deck and shuffle
                 player_state["deck"].extend(player_state["hand"])
@@ -589,6 +605,14 @@ class GameEngine:
 
                 # Draw new hand
                 self._draw_cards(player, 7)
+
+            # If still no basic Pokemon after max mulligans, force add one
+            if not self._has_basic_pokemon(player_state["hand"]):
+                # Find a basic Pokemon in deck and add to hand
+                for i, card in enumerate(player_state["deck"]):
+                    if isinstance(card, PokemonCard) and card.stage in ["Basic", "V", "ex"]:
+                        player_state["hand"].append(player_state["deck"].pop(i))
+                        break
 
         # Opponent draws cards for mulligans
         if mulligans[1] > 0:
@@ -639,6 +663,11 @@ class GameEngine:
 
         actions = []
         player_state = self.state.get_player_state(player)
+
+        # Handle phase transitions
+        if self.state.phase == GamePhase.DRAW:
+            # Automatically transition to main phase after draw
+            self.state.phase = GamePhase.MAIN
 
         if self.state.phase == GamePhase.MAIN:
             # Play basic Pokemon to bench
@@ -697,6 +726,18 @@ class GameEngine:
             # End turn without attacking
             actions.append(Action(ActionType.END_TURN))
 
+        elif self.state.phase == GamePhase.ATTACK:
+            # During attack phase, no actions available except waiting for resolution
+            pass
+
+        elif self.state.phase == GamePhase.POKEMON_CHECKUP:
+            # During Pokemon checkup, no player actions
+            pass
+
+        # If no actions available (e.g., in certain phases or edge cases), allow pass
+        if not actions:
+            actions.append(Action(ActionType.PASS))
+
         return actions
 
     def apply_action(self, action: Action) -> Tuple[GameState, float, bool]:
@@ -707,10 +748,18 @@ class GameEngine:
         player_state = self.state.get_player_state(self.state.current_player)
         opponent_state = self.state.get_opponent_state(self.state.current_player)
 
+        # Handle PASS action
+        if action.action_type == ActionType.PASS:
+            # Just end the turn or transition phase
+            if self.state.phase == GamePhase.MAIN:
+                self._end_turn()
+            return self.state, reward, done
+
         if action.action_type == ActionType.PLAY_BASIC_POKEMON:
             card = player_state["hand"].pop(action.card_index)
             player_state["bench"].append(card)
             reward = 0.1
+
 
         elif action.action_type == ActionType.EVOLVE_POKEMON:
             evolution = player_state["hand"].pop(action.card_index)
@@ -719,10 +768,15 @@ class GameEngine:
                 old_pokemon = player_state["active"]
                 evolution.attached_energy = old_pokemon.attached_energy.copy()
                 evolution.damage_counters = old_pokemon.damage_counters
+                evolution.turns_in_play = old_pokemon.turns_in_play  # Preserve turns
                 player_state["discard"].append(old_pokemon)
-                player_state["active"] = evolution
+                # Set the evolution as active
+                if self.state.current_player == 1:
+                    self.state.player1_active = evolution
+                else:
+                    self.state.player2_active = evolution
                 evolution.evolved_this_turn = True
-                evolution.special_conditions.clear()  # Remove special conditions
+                evolution.special_conditions.clear()
             else:
                 # Evolve bench
                 old_pokemon = player_state["bench"][action.target_index]
@@ -1119,7 +1173,7 @@ class DeckBuilder:
         return deck
 
     def build_basic_deck(self, pokemon_type: EnergyType) -> List[Card]:
-        """Build a basic deck of a given type"""
+        """Build a basic 60-card deck of a given type"""
         deck = []
 
         # Get all cards
@@ -1131,46 +1185,59 @@ class DeckBuilder:
         type_pokemon = [p for p in all_pokemon if p.pokemon_type == pokemon_type]
         basic_pokemon = [p for p in type_pokemon if p.stage in ["Basic", "V", "ex"]]
 
+        # If not enough Pokemon of the type, use any basic Pokemon
+        if len(basic_pokemon) < 5:
+            basic_pokemon = [p for p in all_pokemon if p.stage in ["Basic", "V", "ex"]]
+
         # Add Pokemon (20 cards)
-        if basic_pokemon:
-            # Add 4 copies of up to 5 different basic Pokemon
-            for i, pokemon in enumerate(basic_pokemon[:5]):
-                copies = 4 if i < 3 else 2
-                deck.extend([pokemon] * copies)
+        pokemon_count = 0
+        for i, pokemon in enumerate(basic_pokemon):
+            if pokemon_count >= 20:
+                break
+            copies = min(4, 20 - pokemon_count)  # Max 4 copies per card
+            deck.extend([pokemon] * copies)
+            pokemon_count += copies
+
+        # Fill remaining Pokemon slots with random basics
+        while pokemon_count < 20 and basic_pokemon:
+            deck.append(random.choice(basic_pokemon))
+            pokemon_count += 1
 
         # Add Trainers (25 cards)
-        trainer_counts = {
-            "Professor's Research": 4,
-            "Boss's Orders": 2,
-            "Ultra Ball": 4,
-            "Quick Ball": 4,
-            "Switch": 2,
-            "Ordinary Rod": 2
-        }
-
-        for trainer_name, count in trainer_counts.items():
-            trainers = [t for t in all_trainers if trainer_name in t.name]
-            if trainers:
-                deck.extend([trainers[0]] * min(count, len(trainers)))
-
-        # Fill remaining trainer slots
-        remaining_trainers = 25 - sum(1 for c in deck if isinstance(c, TrainerCard))
-        if remaining_trainers > 0 and all_trainers:
-            deck.extend(random.choices(all_trainers, k=remaining_trainers))
+        trainer_count = 0
+        for trainer in all_trainers[:10]:  # Use first 10 different trainers
+            if trainer_count >= 25:
+                break
+            copies = min(4, 25 - trainer_count)
+            deck.extend([trainer] * copies)
+            trainer_count += copies
 
         # Add Energy (15 cards)
         basic_energy = [e for e in all_energy if e.energy_type == pokemon_type and not e.is_special]
         if basic_energy:
             deck.extend([basic_energy[0]] * 15)
+        else:
+            # Use any energy if specific type not found
+            if all_energy:
+                deck.extend([all_energy[0]] * 15)
 
-        # Ensure deck has 60 cards
-        while len(deck) < 60:
-            if basic_pokemon:
-                deck.append(random.choice(basic_pokemon))
-            else:
-                deck.append(random.choice(list(self.card_db.cards.values())))
+        # Ensure exactly 60 cards
+        if len(deck) < 60:
+            # Add more of any card type to reach 60
+            while len(deck) < 60:
+                if basic_pokemon:
+                    deck.append(random.choice(basic_pokemon))
+                elif all_trainers:
+                    deck.append(random.choice(all_trainers))
+                elif all_energy:
+                    deck.append(random.choice(all_energy))
+                else:
+                    raise ValueError("Not enough cards in database to build deck")
 
-        return deck[:60]
+        # Trim to exactly 60 if over
+        deck = deck[:60]
+
+        return deck
 
 
 @dataclass

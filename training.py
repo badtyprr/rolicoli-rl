@@ -107,21 +107,19 @@ class GPUOptimizedPPOAgent(PPOAgent):
         
         # Compile model if available
         if config.compile_model and hasattr(torch, 'compile'):
-            try:
-                import triton  # Check if triton is available
-                self.policy_net = torch.compile(self.policy_net)
-                logger.info("Model compiled successfully with Triton acceleration")
-            except ImportError:
+            if platform.system() == "Windows":
+                # Skip compilation on Windows or provide fallback
+                logger.info("torch.compile() requires MSVC on Windows. Using eager mode.")
+                # Option 1: Don't compile on Windows
+                # Option 2: Install Visual Studio Build Tools
+            else:
                 try:
+                    import triton
                     self.policy_net = torch.compile(self.policy_net)
-                    logger.info("Model compiled successfully (fallback mode)")
-                except Exception as e:
-                    logger.warning(f"Failed to compile model: {e}")
-                    if platform.system() != "Windows":
-                        logger.info("Install triton for better performance: pip install triton==2.0.0")
-            except Exception as e:
-                logger.warning(f"Failed to compile model: {e}")
-        
+                    logger.info("Model compiled successfully with Triton acceleration")
+                except ImportError:
+                    logger.warning("Triton not available. Using eager mode.")
+
         # Optimizer with weight decay
         self.optimizer = torch.optim.AdamW(
             self.policy_net.parameters(), 

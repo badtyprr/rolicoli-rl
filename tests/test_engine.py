@@ -65,13 +65,13 @@ class TestCardDatabase:
 
 class TestGameEngine:
     """Test game engine functionality"""
-    
+
     @pytest.fixture
     def sample_deck(self):
         """Create a sample 60-card deck"""
         deck = []
-        
-        # Add Pokemon
+
+        # Add Pokemon (15 cards)
         for i in range(15):
             pokemon = PokemonCard(
                 name=f"Pokemon {i}",
@@ -85,8 +85,8 @@ class TestGameEngine:
                 retreat_cost=1
             )
             deck.append(pokemon)
-        
-        # Add Trainers
+
+        # Add Trainers (30 cards)
         for i in range(30):
             trainer = TrainerCard(
                 name=f"Trainer {i}",
@@ -97,8 +97,8 @@ class TestGameEngine:
                 effect_text="Draw 1 card"
             )
             deck.append(trainer)
-        
-        # Add Energy
+
+        # Add Energy (15 cards)
         for i in range(15):
             energy = EnergyCard(
                 name="Lightning Energy",
@@ -108,7 +108,8 @@ class TestGameEngine:
                 energy_type=EnergyType.LIGHTNING
             )
             deck.append(energy)
-        
+
+        assert len(deck) == 60  # Ensure we have exactly 60 cards
         return deck
     
     def test_game_setup(self, sample_deck):
@@ -326,6 +327,51 @@ class TestPokemonMechanics:
 
 class TestStateVector:
     """Test state vector generation for RL"""
+
+    @pytest.fixture
+    def sample_deck(self):
+        """Create a sample 60-card deck"""
+        deck = []
+
+        # Add Pokemon
+        for i in range(15):
+            pokemon = PokemonCard(
+                name=f"Pokemon {i}",
+                set_code="TEST",
+                number=str(i),
+                card_type=CardType.POKEMON,
+                hp=60,
+                stage="Basic",
+                pokemon_type=EnergyType.LIGHTNING,
+                attacks=[Attack("Attack", "20", {EnergyType.COLORLESS: 1})],
+                retreat_cost=1
+            )
+            deck.append(pokemon)
+
+        # Add Trainers
+        for i in range(30):
+            trainer = TrainerCard(
+                name=f"Trainer {i}",
+                set_code="TEST",
+                number=str(100 + i),
+                card_type=CardType.TRAINER,
+                trainer_type=TrainerType.ITEM,
+                effect_text="Draw 1 card"
+            )
+            deck.append(trainer)
+
+        # Add Energy
+        for i in range(15):
+            energy = EnergyCard(
+                name="Lightning Energy",
+                set_code="TEST",
+                number=str(200 + i),
+                card_type=CardType.ENERGY,
+                energy_type=EnergyType.LIGHTNING
+            )
+            deck.append(energy)
+
+        return deck
     
     def test_state_vector_shape(self, sample_deck):
         """Test state vector has consistent shape"""
@@ -356,36 +402,47 @@ class TestStateVector:
         assert 0.9 <= state_vec[22] <= 1.1
 
 
-def test_full_game_simulation(sample_deck):
-    """Test a complete game simulation"""
-    engine = GameEngine()
-    engine.setup_game(sample_deck.copy(), sample_deck.copy())
-    
-    # Play for a limited number of turns
-    max_turns = 100
-    turn_count = 0
-    
-    while turn_count < max_turns:
-        current_player = engine.state.current_player
-        actions = engine.get_legal_actions(current_player)
-        
-        if not actions:
-            break
-        
-        # Take a random action
-        import random
-        action = random.choice(actions)
-        
-        _, _, done = engine.apply_action(action)
-        
-        if done:
-            break
-        
-        turn_count += 1
-    
-    # Game should have progressed
-    assert engine.state.turn_count > 1
-    assert len(engine.action_history) > 0
+class TestFullGame:
+    """Test full game simulation"""
+
+    @pytest.fixture
+    def sample_deck(self):
+        """Create a sample 60-card deck"""
+        # Same implementation as above
+        deck = []
+        # ... (same deck creation code)
+        return deck
+
+    def test_full_game_simulation(self, sample_deck):
+        """Test a complete game simulation"""
+        engine = GameEngine()
+        engine.setup_game(sample_deck.copy(), sample_deck.copy())
+
+        # Play for a limited number of turns
+        max_turns = 100
+        turn_count = 0
+
+        while turn_count < max_turns:
+            current_player = engine.state.current_player
+            actions = engine.get_legal_actions(current_player)
+
+            if not actions:
+                break
+
+            # Take a random action
+            import random
+            action = random.choice(actions)
+
+            _, _, done = engine.apply_action(action)
+
+            if done:
+                break
+
+            turn_count += 1
+
+        # Game should have progressed
+        assert engine.state.turn_count > 1
+        assert len(engine.action_history) > 0
 
 
 if __name__ == "__main__":

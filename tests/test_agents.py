@@ -70,7 +70,7 @@ class TestRandomAgent:
 
 class TestPPOAgentBehavior:
     """Test PPO agent strategic behavior"""
-    
+
     @pytest.fixture
     def trained_agent(self):
         """Create a partially trained agent"""
@@ -78,9 +78,10 @@ class TestPPOAgentBehavior:
             learning_rate=1e-3,  # Higher for faster learning in tests
             rollout_length=32,
             batch_size=16,
-            use_cuda=False
+            use_cuda=False,
+            compile_model=False  # Add this line to disable compilation in tests
         )
-        
+
         agent = GPUOptimizedPPOAgent(config, state_dim=32, action_dim=100)
         
         # Do some mock training to initialize properly

@@ -24,6 +24,36 @@ from training import (
     ExperimentTracker, Tournament, TrainingOrchestrator
 )
 
+@pytest.fixture
+def env():
+    """Create test environment"""
+    # ... implementation as above ...
+    return env
+
+
+@pytest.fixture
+def tournament(env):
+    """Create tournament with environment"""
+    return Tournament(env)
+
+
+# In test_agents.py, add the trained_agent fixture:
+
+@pytest.fixture
+def trained_agent():
+    """Create a partially trained agent"""
+    config = PPOConfig(
+        learning_rate=1e-3,
+        rollout_length=32,
+        batch_size=16,
+        use_cuda=False,
+        compile_model=False
+    )
+
+    agent = GPUOptimizedPPOAgent(config, state_dim=32, action_dim=100)
+
+    # Do some mock training...
+    return agent
 
 class TestNeuralNetworks:
     """Test neural network architectures"""
@@ -105,50 +135,56 @@ class TestNeuralNetworks:
 
 class TestEnvironment:
     """Test Pokemon TCG environment"""
-    
+
     @pytest.fixture
     def env(self):
         """Create test environment"""
-        # Create minimal card database
         card_db = CardDatabase()
-        
-        # Add some test cards
+
+        # Create comprehensive card set
         sample_data = {
-            "cards": [
-                {
-                    "name": f"Pokemon {i}",
-                    "set_code": "TEST",
-                    "number": str(i),
-                    "card_type": "Pokemon",
-                    "hp": 60 + i * 10,
-                    "stage": "Basic",
-                    "attacks": [
-                        {"name": "Attack", "damage": "20", "cost": "C"}
-                    ],
-                    "retreat_cost": 1
-                } for i in range(20)
-            ] + [
-                {
-                    "name": "Lightning Energy",
-                    "set_code": "TEST",
-                    "number": "100",
-                    "card_type": "Energy",
-                    "energy_type": "Lightning"
-                } for _ in range(20)
-            ] + [
-                {
-                    "name": "Professor's Research",
-                    "set_code": "TEST",
-                    "number": "200",
-                    "card_type": "Trainer",
-                    "trainer_type": "Supporter",
-                    "effect": "Draw 7 cards"
-                } for _ in range(20)
-            ]
+            "cards": []
         }
-        
+
+        # Add 20 different Pokemon
+        for i in range(20):
+            sample_data["cards"].append({
+                "name": f"Pokemon {i}",
+                "set_code": "TEST",
+                "number": str(i),
+                "card_type": "Pokemon",
+                "hp": 60 + i * 10,
+                "stage": "Basic",
+                "attacks": [
+                    {"name": "Attack", "damage": "20", "cost": "C"}
+                ],
+                "retreat_cost": 1
+            })
+
+        # Add 20 trainer cards
+        for i in range(20):
+            sample_data["cards"].append({
+                "name": f"Trainer {i}",
+                "set_code": "TEST",
+                "number": str(100 + i),
+                "card_type": "Trainer",
+                "trainer_type": "Item",
+                "effect": "Draw 1 card"
+            })
+
+        # Add 20 energy cards
+        for i in range(20):
+            sample_data["cards"].append({
+                "name": "Lightning Energy",
+                "set_code": "TEST",
+                "number": str(200 + i),
+                "card_type": "Energy",
+                "energy_type": "Lightning"
+            })
+
         card_db.load_from_json(sample_data)
-        
+
+        # Create environment with correct parameters
         env = PokemonTCGEnv(card_db, use_graph_encoder=False, max_steps=100)
         return env
     
@@ -371,11 +407,19 @@ class TestReplayBuffer:
 
 class TestSelfPlay:
     """Test self-play manager"""
-    
+
     @pytest.fixture
-    def self_play_env(self, env):
+    def test_env(self):
+        """Create test environment"""
+        card_db = CardDatabase()
+        # ... (same card creation code as in other tests)
+        env = PokemonTCGEnv(card_db, use_graph_encoder=False, max_steps=100)
+        return env
+
+    @pytest.fixture
+    def self_play_env(self, test_env):
         """Create self-play manager"""
-        return SelfPlayManager(env, PPOAgent, population_size=3)
+        return SelfPlayManager(test_env, PPOAgent, population_size=3)
     
     def test_population_management(self, self_play_env):
         """Test adding agents to population"""

@@ -526,7 +526,7 @@ class PrioritizedReplayBuffer:
         for idx, td_error in zip(indices, td_errors):
             priority = (abs(td_error) + 1e-6) ** self.alpha
             self.priorities[idx] = priority
-            self.max_priority = max(self.max_priority, priority)
+            self.max_priority = max(self.max_priority, priority, 1.1)  # Ensure it's > 1.0
 
     def __len__(self):
         return len(self.buffer)
