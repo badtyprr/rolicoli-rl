@@ -3,7 +3,7 @@
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![Stable Baselines3](https://img.shields.io/badge/SB3-2.0+-green.svg)](https://stable-baselines3.readthedocs.io/)
 [![PyTorch](https://img.shields.io/badge/PyTorch-1.11+-red.svg)](https://pytorch.org/)
-[![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 A state-of-the-art reinforcement learning implementation for the Pokemon Trading Card Game using Stable Baselines3. This project features RecurrentPPO agents with LSTM policies to handle the partial observability and complex strategy of Pokemon TCG.
 
@@ -17,7 +17,7 @@ A state-of-the-art reinforcement learning implementation for the Pokemon Trading
 - **🧠 LSTM-based Policies**: Handles partial observability and card game memory requirements
 - **🎯 Complete Pokemon TCG Rules**: Full game engine with all mechanics implemented
 - **🃏 Draft Mode**: Booster draft environment for deck building strategy
-- **⚡ GPU Acceleration**: CUDA support for faster training
+- **⚡ GPU Acceleration**: CUDA and AMD ROCm support for faster training
 - **📊 TensorBoard Integration**: Real-time training metrics and visualization
 - **🎮 Play vs AI**: Interactive mode to play against trained agents
 - **🔄 Vectorized Environments**: Parallel training for better sample efficiency
@@ -30,9 +30,8 @@ A state-of-the-art reinforcement learning implementation for the Pokemon Trading
 - [Playing Against AI](#-playing-against-ai)
 - [Architecture](#-architecture)
 - [Performance](#-performance)
-- [API Documentation](#-api-documentation)
+- [Project Structure](#-project-structure)
 - [Contributing](#-contributing)
-- [Citation](#-citation)
 
 ## 🚀 Quick Start
 
@@ -59,64 +58,62 @@ python play_trained_agent.py models/pokemon_tcg/best_model/best_model --mode pla
 ### Prerequisites
 
 - Python 3.8-3.11 (3.12+ may have compatibility issues)
-- (Optional) NVIDIA GPU with CUDA support for faster training
+- (Optional) NVIDIA GPU with CUDA support or AMD GPU with ROCm support
 - 8GB+ RAM recommended
 
 ### Automatic Installation
 
-#### Cross-platform (Recommended)
+The easiest way to install is using the provided installation script:
+
 ```bash
+# Cross-platform installation
 python install_sb3.py
 ```
 
-#### Linux/Mac
-```bash
-chmod +x install_sb3.sh
-./install_sb3.sh
-```
-
-#### Windows
-```batch
-install_sb3.bat
-```
+This script will:
+- ✅ Detect your GPU (NVIDIA CUDA, AMD ROCm, or CPU-only)
+- ✅ Install appropriate PyTorch version
+- ✅ Install Stable Baselines3 and dependencies
+- ✅ Create project directory structure
+- ✅ Run installation tests
 
 ### Manual Installation
 
+If you prefer manual installation:
+
 ```bash
 # Create virtual environment
-python -m venv .venv
-source .venv/bin/activate  # Linux/Mac
-# OR
-.venv\Scripts\activate  # Windows
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 
-# Install PyTorch (choose one)
+# Install PyTorch (choose based on your system)
 # For CUDA 11.8
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
 
 # For CPU only
 pip install torch torchvision torchaudio
 
-# Install Stable Baselines3 and dependencies
-pip install -r requirements_sb3.txt
+# Install project dependencies
+pip install stable-baselines3[extra]>=2.0.0
+pip install sb3-contrib>=2.0.0
+pip install gymnasium>=0.28.0
+pip install tensorboard>=2.10.0
+pip install numpy pandas matplotlib tqdm
 
 # Verify installation
 python test_installation_sb3.py
 ```
 
-### Docker Installation
+### GPU Support
 
-```dockerfile
-FROM python:3.9-slim
+The project supports multiple GPU backends:
 
-WORKDIR /app
-
-COPY requirements_sb3.txt .
-RUN pip install -r requirements_sb3.txt
-
-COPY . .
-
-CMD ["python", "train_sb3.py"]
-```
+- **NVIDIA GPUs**: Full CUDA support with automatic detection
+- **AMD GPUs**: 
+  - Linux: ROCm support for RX 6000/7000 series
+  - Windows: DirectML support (experimental)
+- **Apple Silicon**: Metal Performance Shaders (MPS) support
+- **CPU**: Full support with optimized performance
 
 ## 🎯 Training Agents
 
@@ -139,10 +136,7 @@ python train_sb3.py --mode both
 # Custom timesteps and parallel environments
 python train_sb3.py --mode battle --timesteps 5000000 --n-envs 8
 
-# Resume from checkpoint
-python train_sb3.py --mode battle --load-checkpoint models/pokemon_tcg/checkpoint_500000.zip
-
-# Custom hyperparameters
+# With custom hyperparameters
 python train_sb3.py --mode battle \
     --learning-rate 0.0001 \
     --batch-size 128 \
@@ -161,7 +155,7 @@ tensorboard --logdir logs/
 
 Training metrics include:
 - Episode rewards and lengths
-- Win rates against random opponents  
+- Win rates against random opponents
 - Action type distribution
 - Policy/value losses
 - Learning rate schedule
@@ -171,33 +165,8 @@ Training metrics include:
 ### Interactive Play Mode
 
 ```bash
-# Play against the AI
+# Play against the best trained model
 python play_trained_agent.py models/pokemon_tcg/best_model/best_model --mode play
-```
-
-You'll see:
-```
-=== Pokemon TCG - Play vs AI ===
-You are Player 2 (Water deck)
-AI is Player 1 (Lightning deck)
-================================
-
-Turn 1 - Player 1's turn
-========================
-Player 1:
-  Prizes: 6
-  Hand: 7 cards
-  Active: Pikachu (60/60 HP)
-  
-Your turn!
-Legal actions:
-0: play_basic_pokemon
-   -> Squirtle
-1: attach_energy
-   -> Water Energy
-2: end_turn
-
-Choose action (number): _
 ```
 
 ### Watch AI vs AI Battles
@@ -205,49 +174,34 @@ Choose action (number): _
 ```bash
 # Watch two AIs battle
 python play_trained_agent.py models/pokemon_tcg/best_model/best_model --mode watch --games 10
-
-# Different models
-python play_trained_agent.py model1.zip --mode watch --opponent model2.zip --games 5
 ```
 
 ## 🏗️ Architecture
 
 ### System Overview
 
-```mermaid
-graph TD
-    A[Pokemon TCG Game Engine] --> B[Gym Environment Wrapper]
-    B --> C[Vectorized Environments]
-    C --> D[RecurrentPPO Agent]
-    D --> E[LSTM Policy Network]
-    E --> F[Action Selection]
-    F --> B
-    
-    D --> G[TensorBoard Logging]
-    D --> H[Model Checkpoints]
-```
+The project consists of several key components:
 
-### Components
-
-1. **Game Engine** (`pokemon_tcg_rl.py`)
+1. **Game Engine** (requires `pokemon_tcg_rl.py` - not included)
    - Complete Pokemon TCG rules implementation
    - Card database and deck building
    - Game state management
 
 2. **Gym Environments**
-   - `PokemonTCGGymEnv`: Battle environment
-   - `PokemonTCGDraftEnv`: Draft environment
+   - `pokemon_tcg_gym_env.py`: Battle environment wrapper
+   - `pokemon_tcg_draft_env.py`: Draft environment wrapper
    - Full OpenAI Gym API compliance
 
-3. **RecurrentPPO Agent**
-   - LSTM-based policy for handling partial observability
-   - Automatic hidden state management
-   - Proven performance on partially observable games
-
-4. **Training Infrastructure**
+3. **Training Infrastructure** (`train_sb3.py`)
+   - RecurrentPPO with LSTM policies
    - Vectorized environments for parallel training
    - Automatic checkpointing and evaluation
-   - TensorBoard and Weights & Biases integration
+   - TensorBoard logging
+
+4. **Utilities**
+   - `install_sb3.py`: Cross-platform installation with GPU detection
+   - `benchmark_sb3.py`: Performance benchmarking tools
+   - `test_installation_sb3.py`: Installation verification
 
 ### State Representation
 
@@ -259,7 +213,7 @@ The environment provides a 32-dimensional observation vector:
 - Bench: Size and total HP
 - Resources: Hand size, deck size, prizes
 
-# Opponent features (10 dims)  
+# Opponent features (10 dims)
 - Active Pokemon: HP ratio, stage, energy
 - Bench: Size
 - Resources: Hand size, deck size, prizes
@@ -271,7 +225,7 @@ The environment provides a 32-dimensional observation vector:
 
 ### Action Space
 
-200 discrete actions covering:
+200 discrete actions covering all possible game actions:
 - Playing Pokemon (Basic, Evolution)
 - Attaching Energy
 - Playing Trainer cards
@@ -297,93 +251,41 @@ The environment provides a 32-dimensional observation vector:
 | Rule-based | 65% | 25 turns |
 | Self-play | 50% | 30 turns |
 
-### GPU Acceleration
+## 📁 Project Structure
 
-With CUDA-enabled GPU:
-- 4-7x faster training
-- Support for larger batch sizes
-- Mixed precision training available
-
-## 📚 API Documentation
-
-### Environment API
-
-```python
-from pokemon_tcg_gym_env import PokemonTCGGymEnv
-from pokemon_tcg_rl import CardDatabase, EnergyType
-
-# Create environment
-card_db = CardDatabase()  # Load your cards
-env = PokemonTCGGymEnv(
-    card_database=card_db,
-    deck1_type=EnergyType.LIGHTNING,
-    deck2_type=EnergyType.WATER,
-    max_steps=200,
-    reward_shaping=True
-)
-
-# Use with Stable Baselines3
-from sb3_contrib import RecurrentPPO
-
-model = RecurrentPPO(
-    "MlpLstmPolicy",
-    env,
-    learning_rate=3e-4,
-    n_steps=256,
-    batch_size=64,
-    verbose=1
-)
-
-model.learn(total_timesteps=1000000)
+```
+pokemon-tcg-rl-sb3/
+├── Core Files
+│   ├── pokemon_tcg_gym_env.py      # Battle environment wrapper
+│   ├── pokemon_tcg_draft_env.py    # Draft environment wrapper
+│   ├── train_sb3.py                # Main training script
+│   └── play_trained_agent.py       # Play against trained models (if exists)
+│
+├── Setup & Testing
+│   ├── install_sb3.py              # Cross-platform installation script
+│   ├── test_installation_sb3.py    # Installation verification
+│   ├── test_gym_environments.py    # Environment unit tests
+│   └── benchmark_sb3.py            # Performance benchmarking
+│
+├── Generated Directories (created by install_sb3.py)
+│   ├── models/                     # Saved models
+│   │   ├── pokemon_tcg/           # Battle models
+│   │   │   └── best_model/        # Best performing model
+│   │   └── pokemon_draft/         # Draft models
+│   ├── logs/                      # TensorBoard logs
+│   │   ├── pokemon_tcg/           # Battle training logs
+│   │   └── pokemon_draft/         # Draft training logs
+│   ├── data/                      # Card database
+│   │   ├── cards.json            # Card data (user provided)
+│   │   └── decks/                # Pre-built decks
+│   ├── experiments/              # Experiment results
+│   └── checkpoints/              # Training checkpoints
+│
+└── Dependencies (not included)
+    └── pokemon_tcg_rl.py          # Core game engine (required)
 ```
 
-### Custom Training
-
-```python
-from stable_baselines3.common.vec_env import DummyVecEnv
-from stable_baselines3.common.callbacks import EvalCallback
-
-# Vectorized environments
-env = DummyVecEnv([lambda: PokemonTCGGymEnv(card_db) for _ in range(4)])
-
-# Evaluation callback
-eval_env = PokemonTCGGymEnv(card_db)
-eval_callback = EvalCallback(
-    eval_env,
-    best_model_save_path="./models/",
-    log_path="./logs/",
-    eval_freq=10000,
-    n_eval_episodes=10
-)
-
-# Train with callbacks
-model.learn(
-    total_timesteps=1000000,
-    callback=eval_callback
-)
-```
-
-### Loading and Using Trained Models
-
-```python
-# Load trained model
-model = RecurrentPPO.load("models/pokemon_tcg/best_model/best_model")
-
-# Use for inference
-obs = env.reset()
-lstm_states = None
-episode_starts = np.ones((1,), dtype=bool)
-
-while not done:
-    action, lstm_states = model.predict(
-        obs,
-        state=lstm_states,
-        episode_start=episode_starts,
-        deterministic=True
-    )
-    obs, reward, done, info = env.step(action)
-    episode_starts = done
-```
+**Note**: The core game engine (`pokemon_tcg_rl.py`) containing the Pokemon TCG rules implementation needs to be added to the project root directory.
 
 ## 🧪 Testing
 
@@ -395,74 +297,66 @@ pytest
 pytest test_gym_environments.py -v  # Environment tests
 pytest test_installation_sb3.py -v   # Installation tests
 
-# Benchmarks
-python benchmark_sb3.py  # Performance benchmarks
+# Run benchmarks
+python benchmark_sb3.py
 ```
 
 ## 🔧 Configuration
 
-### Hyperparameters
+### Environment Configuration
 
-Default PPO hyperparameters in `train_sb3.py`:
+```python
+# Create custom environment
+env = PokemonTCGGymEnv(
+    card_database=card_db,
+    deck1_type=EnergyType.LIGHTNING,
+    deck2_type=EnergyType.WATER,
+    max_steps=200,
+    reward_shaping=True,
+    self_play=False,
+    opponent_policy=None  # Or provide trained model
+)
+```
+
+### Training Hyperparameters
+
+Default RecurrentPPO hyperparameters:
 
 ```python
 {
     "learning_rate": 3e-4,
-    "n_steps": 256,        # Steps per update
-    "batch_size": 64,      # Minibatch size
-    "n_epochs": 4,         # PPO epochs
-    "gamma": 0.99,         # Discount factor
-    "gae_lambda": 0.95,    # GAE parameter
-    "clip_range": 0.2,     # PPO clipping
-    "ent_coef": 0.01,      # Entropy coefficient
-    "vf_coef": 0.5,        # Value loss coefficient
-    "max_grad_norm": 0.5,  # Gradient clipping
+    "n_steps": 256,
+    "batch_size": 64,
+    "n_epochs": 4,
+    "gamma": 0.99,
+    "gae_lambda": 0.95,
+    "clip_range": 0.2,
+    "ent_coef": 0.01,
+    "policy_kwargs": {
+        "lstm_hidden_size": 128,
+        "net_arch": [dict(pi=[256, 256], vf=[256, 256])],
+        "enable_critic_lstm": True,
+    }
 }
 ```
-
-### LSTM Policy Configuration
-
-```python
-"policy_kwargs": {
-    "lstm_hidden_size": 128,
-    "net_arch": [dict(pi=[256, 256], vf=[256, 256])],
-    "enable_critic_lstm": True,
-    "ortho_init": True,
-}
-```
-
-## 📈 Results
-
-### Learning Curves
-
-Training typically shows:
-- Rapid initial learning (0-100k steps)
-- Strategic refinement (100k-500k steps)
-- Advanced tactics emergence (500k+ steps)
-
-### Emergent Strategies
-
-Trained agents learn to:
-- Efficiently manage energy attachments
-- Build bench for backup attackers
-- Time evolution chains properly
-- Use trainer cards strategically
-- Adapt to opponent's deck type
 
 ## 🤝 Contributing
 
-We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
+We welcome contributions! Areas for improvement include:
 
-Areas for contribution:
 - Additional card sets and mechanics
-- Alternative RL algorithms (A2C, DQN)
+- Alternative RL algorithms (A2C, DQN, IMPALA)
 - Multiplayer support
 - GUI interface
 - Card balance analysis
+- Improved reward shaping
+- Tournament play modes
+
+Please read our contributing guidelines before submitting PRs.
 
 ## 📄 License
 
-This project is licensed under the GNU Affero General Public License v3.0 - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## 📖 Citation
 
@@ -481,7 +375,7 @@ If you use this code in your research, please cite:
 ## 🙏 Acknowledgments
 
 - [Stable Baselines3](https://stable-baselines3.readthedocs.io/) team for the excellent RL library
-- [OpenAI Gym](https://gymnasium.farama.org/) for the environment interface
+- [Gymnasium](https://gymnasium.farama.org/) for the environment interface standard
 - Pokemon Company for the original game
 - Contributors and the RL community
 
@@ -489,7 +383,7 @@ If you use this code in your research, please cite:
 
 - **Issues**: [GitHub Issues](https://github.com/yourusername/pokemon-tcg-rl-sb3/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/yourusername/pokemon-tcg-rl-sb3/discussions)
-- **Documentation**: [Wiki](https://github.com/yourusername/pokemon-tcg-rl-sb3/wiki)
+- **Wiki**: [Documentation](https://github.com/yourusername/pokemon-tcg-rl-sb3/wiki)
 
 ---
 
