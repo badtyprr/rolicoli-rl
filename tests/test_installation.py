@@ -84,6 +84,28 @@ try:
 except Exception as e:
     print_check(False, f"AMD SMI not accessible: {e}")
 
+# Check Pokemon TCG RL requirements
+print("\n" + "="*50)
+print("Pokemon TCG RL Requirements Check")
+print("="*50)
+
+packages_to_check = [
+    ("yaml", "PyYAML"),
+    ("tqdm", "tqdm"),
+    ("wandb", "wandb"),
+    ("pytest", "pytest"),
+    ("black", "black"),
+    ("flake8", "flake8"),
+    ("mypy", "mypy")
+]
+
+for module_name, package_name in packages_to_check:
+    try:
+        __import__(module_name)
+        print_check(True, f"{package_name} installed")
+    except ImportError:
+        print_check(False, f"{package_name} not found")
+
 print("\n" + "="*50)
 print("Verification complete!")
 print("="*50)

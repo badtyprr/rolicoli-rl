@@ -2,6 +2,7 @@
 
 # PyTorch with ROCm + Stable Baselines3 + RecurrentPPO Setup Script
 # This script sets up a complete environment for RL development with AMD GPUs
+# Now includes Pokemon TCG RL requirements
 
 set -e  # Exit on any error
 
@@ -19,6 +20,7 @@ PYTHON_VERSION="3.11"
 
 echo -e "${BLUE}=======================================${NC}"
 echo -e "${BLUE}PyTorch ROCm + SB3 Setup Script${NC}"
+echo -e "${BLUE}with Pokemon TCG RL Requirements${NC}"
 echo -e "${BLUE}=======================================${NC}"
 
 # Function to print status messages
@@ -140,14 +142,27 @@ print_status "Installing SB3 contrib (for RecurrentPPO)..."
 pip install sb3-contrib
 
 # Install additional useful packages
-print_status "Installing additional packages..."
+print_status "Installing core packages..."
 pip install gymnasium tensorboard matplotlib numpy pandas seaborn jupyter ipykernel
+
+# Install Pokemon TCG RL specific requirements
+print_status "Installing Pokemon TCG RL requirements..."
+pip install "pyyaml>=6.0" \
+           "tqdm>=4.65.0" \
+           "wandb>=0.15.0"
+
+# Install development tools
+print_status "Installing development tools..."
+pip install "pytest>=7.3.0" \
+           "black>=23.3.0" \
+           "flake8>=6.0.0" \
+           "mypy>=1.3.0"
 
 # Add kernel to jupyter
 print_status "Adding environment to Jupyter kernels..."
 python -m ipykernel install --user --name="$ENV_NAME" --display-name="PyTorch ROCm SB3"
 
-# Create test script
+# Create test script with Pokemon TCG RL requirements check
 print_status "Creating verification script..."
 cat > tests/test_installation.py << 'EOF'
 import torch
@@ -236,6 +251,28 @@ try:
 except Exception as e:
     print_check(False, f"AMD SMI not accessible: {e}")
 
+# Check Pokemon TCG RL requirements
+print("\n" + "="*50)
+print("Pokemon TCG RL Requirements Check")
+print("="*50)
+
+packages_to_check = [
+    ("yaml", "PyYAML"),
+    ("tqdm", "tqdm"),
+    ("wandb", "wandb"),
+    ("pytest", "pytest"),
+    ("black", "black"),
+    ("flake8", "flake8"),
+    ("mypy", "mypy")
+]
+
+for module_name, package_name in packages_to_check:
+    try:
+        __import__(module_name)
+        print_check(True, f"{package_name} installed")
+    except ImportError:
+        print_check(False, f"{package_name} not found")
+
 print("\n" + "="*50)
 print("Verification complete!")
 print("="*50)
@@ -244,52 +281,6 @@ EOF
 # Run verification
 print_status "Running verification tests..."
 python tests/test_installation.py
-
-# Create quick example script
-print_status "Creating example script..."
-cat > examples/example_rppo.py << 'EOF'
-import gymnasium as gym
-import torch
-from sb3_contrib import RecurrentPPO
-
-# Create environment
-env = gym.make('CartPole-v1')
-
-# Set device
-device = "cuda" if torch.cuda.is_available() else "cpu"
-print(f"Using device: {device}")
-
-# Create RecurrentPPO model
-model = RecurrentPPO(
-    "MlpLstmPolicy",
-    env,
-    verbose=1,
-    device=device,
-    learning_rate=3e-4,
-    n_steps=128,
-    batch_size=64,
-    n_epochs=4,
-)
-
-print("Training RecurrentPPO for 2000 steps...")
-model.learn(total_timesteps=2000)
-
-print("Testing trained model...")
-obs, _ = env.reset()
-total_reward = 0
-
-for i in range(200):
-    action, _ = model.predict(obs, deterministic=True)
-    obs, reward, terminated, truncated, info = env.step(action)
-    total_reward += reward
-
-    if terminated or truncated:
-        print(f"Episode finished with reward: {total_reward}")
-        obs, _ = env.reset()
-        total_reward = 0
-
-print("RecurrentPPO example completed!")
-EOF
 
 print_status "Creating activation script..."
 cat > scripts/activate_env.sh << EOF
@@ -312,6 +303,10 @@ echo "Environment activated: \$CONDA_DEFAULT_ENV"
 echo "ROCm path: \$ROCM_PATH"
 echo "GPU Architecture: gfx1100 (RX 7900 XT)"
 echo "PyTorch device: \$(python -c 'import torch; print("cuda" if torch.cuda.is_available() else "cpu")')"
+echo ""
+echo "Pokemon TCG RL packages installed:"
+echo "  ✓ PyYAML, tqdm, wandb"
+echo "  ✓ pytest, black, flake8, mypy"
 EOF
 
 chmod +x scripts/activate_env.sh
@@ -328,10 +323,8 @@ echo
 echo -e "${BLUE}Test your installation:${NC}"
 echo "python tests/test_installation.py"
 echo
-echo -e "${BLUE}Try the RecurrentPPO example:${NC}"
-echo "python examples/example_rppo.py"
-echo
 echo -e "${BLUE}Check AMD GPU status:${NC}"
 echo "amd-smi static"
 echo
 echo -e "${YELLOW}Note:${NC} Make sure to activate the environment before using PyTorch!"
+echo -e "${YELLOW}Note:${NC} For WandB, run 'wandb login' after activation to set up your API key"

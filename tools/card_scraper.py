@@ -28,7 +28,7 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('pokemon_tcg_scraper.log', encoding='utf-8'),
+        logging.FileHandler('../data/pokemon_tcg_scraper.log', encoding='utf-8'),
         logging.StreamHandler()
     ]
 )
@@ -73,7 +73,7 @@ class PokemonCard:
 
 
 class LimitlessTCGScraper:
-    """Professional scraper for Limitless TCG website"""
+    """Scraper for Limitless TCG website"""
 
     BASE_URL = "https://limitlesstcg.com"
     CARDS_URL = f"{BASE_URL}/cards"
@@ -351,61 +351,126 @@ class LimitlessTCGScraper:
         # Clean the text for better matching
         clean_text = re.sub(r'\s+', ' ', text)
 
-        # Check for Trainer cards first - they have specific pattern
+        # PRIORITY 1: Check for explicit Trainer card patterns FIRST
+        # This catches most trainer cards that are properly labeled
         if re.search(r'Trainer\s*[-–—]\s*(Item|Supporter|Stadium|Tool|Pokémon Tool)', clean_text):
             return 'Trainer'
 
-        # Check for Basic Energy
-        if 'Basic' in name and 'Energy' in name:
-            return 'Energy'
+        # PRIORITY 2: Check trainer-specific names (before checking HP)
+        # Common trainer card naming patterns
+        trainer_name_patterns = [
+            'Ball', 'Belt', 'Bomb', 'Invitation', 'Goggles', 'Band', 'Weight',
+            'Rope', 'Hammer', 'Catcher', 'Switch', 'Potion', 'Candy', 'Rod',
+            'Scope', 'Boots', 'Gloves', 'Helmet', 'Vest', 'Cape', 'Whistle',
+            'Flute', 'Badge', 'Pass', 'Ticket', 'Letter'
+        ]
 
-        # Check for HP - strong indicator of Pokemon
-        if re.search(r'\d+\s*HP', text):
+        # Check for possessive forms (like "Cynthia's Power Weight")
+        if "'" in name or "'" in name:  # Handle both apostrophe types
+            for pattern in trainer_name_patterns:
+                if pattern in name:
+                    # Double-check it's not a Pokemon with trainer-like name
+                    if not re.search(r'\b\d+\s*HP\b', text[:200]):  # No HP in first 200 chars
+                        return 'Trainer'
+
+        # Also check non-possessive trainer names
+        for pattern in trainer_name_patterns:
+            if pattern in name and not re.search(r'\b\d+\s*HP\b', text[:200]):
+                return 'Trainer'
+
+        # PRIORITY 3: Check for explicit HP indicator (strongest Pokemon indicator)
+        # Look for patterns like "110 HP", "Basic - 110 HP", etc. in the beginning
+        if re.search(r'\b\d+\s*HP\b', text[:200]):  # Only check first 200 characters
             return 'Pokemon'
 
-        # Check for Pokemon-specific keywords
-        if any(keyword in text for keyword in ['Stage 1', 'Stage 2', 'Basic Pokémon', 'Evolves from', 'Weakness:', 'Resistance:', 'Retreat:']):
-            return 'Pokemon'
+        # PRIORITY 4: Check for Pokemon-specific stage/evolution keywords
+        if any(keyword in text for keyword in ['Stage 1', 'Stage 2', 'Basic Pokémon', 'Evolves from']):
+            # Make sure it's not in trainer effect text
+            if 'search your deck' not in clean_text.lower():
+                return 'Pokemon'
 
-        # Check if name contains Pokemon suffixes
+        # PRIORITY 5: Check for Pokemon battle keywords at line start
+        # These should be at the beginning of lines, not in effect text
+        for line in text.split('\n'):
+            line = line.strip()
+            if line.startswith(('Weakness:', 'Resistance:', 'Retreat:')):
+                return 'Pokemon'
+
+        # PRIORITY 6: Check if name contains Pokemon suffixes
         if any(suffix in name for suffix in [' ex', ' V', ' VMAX', ' VSTAR', ' GX', ' EX']):
             return 'Pokemon'
 
-        # Check for Energy keywords
-        if 'Energy' in text and 'HP' not in text:
-            # Check specifically for energy card patterns
-            if 'Special Energy' in text or 'Basic Energy' in text:
-                return 'Energy'
-            # Energy cards usually have very short text
-            if len(text) < 500 and ('provides' in text.lower() or 'Energy' in name):
-                return 'Energy'
+        # PRIORITY 7: Check for ability patterns
+        if re.search(r'(?:^|\n)\s*(?:Ability|Poké-POWER|Poké-BODY)\s*[:\.]', text):
+            return 'Pokemon'
 
-        # Check for Trainer keywords without HP
-        if 'HP' not in text:
-            # Check for trainer action keywords
-            trainer_keywords = ['draw', 'search your deck', 'discard', 'shuffle', 'attach',
-                              'your turn', 'opponent', 'prize card', 'bench', 'switch']
-            if any(keyword in text.lower() for keyword in trainer_keywords):
+        # PRIORITY 8: Check for attack patterns (energy cost + attack name + optional damage)
+        # Must be at line start to avoid matching text in trainer effects
+        if re.search(r'(?:^|\n)\s*[GRWLPFDMNYC]{1,6}\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s*\d*', text):
+            # Verify it's not in a trainer effect description
+            if 'attached' not in clean_text.lower() or 'damage' in clean_text.lower():
+                return 'Pokemon'
+
+        # PRIORITY 9: Check for ACE SPEC (only after other checks)
+        if 'ACE SPEC' in clean_text:
+            # Check if it's an Energy ACE SPEC
+            if 'Energy' in name and ('provides' in clean_text.lower() or 'attached' in clean_text.lower()):
+                return 'Energy'
+            # Check for Pokemon-specific text
+            elif any(poke_text in clean_text for poke_text in ['This Pokémon', 'this Pokémon', 'is Knocked Out']):
+                # But not if it's clearly a trainer talking about Pokemon
+                if 'from your hand' not in clean_text and 'to your Pokémon' not in clean_text:
+                    return 'Pokemon'
+            # Default ACE SPEC to Trainer
+            else:
                 return 'Trainer'
 
-        # Check HTML structure for more clues
-        if soup:
-            # Look for Pokemon-specific elements
-            if soup.find(string=re.compile(r'\d+\s*HP')):
-                return 'Pokemon'
-
-            # Look for attack cost patterns (energy symbols followed by attack names)
-            if soup.find(string=re.compile(r'[GRWLPFDMNYC]+\s+[A-Z][a-z]')):
-                return 'Pokemon'
-
-        # Default based on content patterns
-        if len(text) > 800 or 'HP' in text:
-            return 'Pokemon'
-        elif 'Energy' in name or 'Energy' in text:
+        # PRIORITY 10: Check for Basic Energy
+        if 'Basic' in name and 'Energy' in name:
             return 'Energy'
-        else:
-            # Default to Trainer for cards without HP
+
+        # PRIORITY 11: Check for Special Energy
+        if 'Energy' in name:
+            if any(indicator in clean_text.lower() for indicator in ['provides', 'special energy']):
+                return 'Energy'
+            if len(text) < 500 and 'HP' not in text:
+                return 'Energy'
+
+        # PRIORITY 12: Check for trainer effect keywords
+        trainer_phrases = [
+            'search your deck', 'from your hand', 'to your hand', 'draw cards',
+            'from your discard pile', 'shuffle your deck', 'your opponent discards',
+            'attach this card', 'pokémon tool', 'item card', 'supporter card',
+            'stadium card', 'play this card', 'when you play this'
+        ]
+
+        trainer_phrase_count = sum(1 for phrase in trainer_phrases if phrase in clean_text.lower())
+
+        # Strong indication of trainer if multiple phrases and no HP
+        if trainer_phrase_count >= 2 and 'HP' not in text:
             return 'Trainer'
+
+        # PRIORITY 13: Length-based defaults with context
+        if len(text) < 400:
+            # Short cards are usually trainers or energy
+            if 'Energy' in name:
+                return 'Energy'
+            elif 'damage' not in text.lower() and 'HP' not in text:
+                return 'Trainer'
+
+        # PRIORITY 14: Final Pokemon check
+        # Look for any strong Pokemon indicators we might have missed
+        pokemon_indicators = ['This Pokémon', 'Defending Pokémon', 'Active Pokémon', 'Benched Pokémon']
+        if any(indicator in clean_text for indicator in pokemon_indicators):
+            # Make sure it's not a trainer referencing Pokemon
+            if 'from your hand' not in clean_text.lower() and 'attach this' not in clean_text.lower():
+                return 'Pokemon'
+
+        # Final default: If still uncertain, lean towards Trainer for short text
+        if len(text) < 600:
+            return 'Trainer'
+        else:
+            return 'Pokemon'
 
     def _parse_pokemon_card(self, soup: BeautifulSoup, url: str, actual_set_code: str = None) -> Optional[PokemonCard]:
         """Parse a Pokemon card page"""
@@ -574,6 +639,7 @@ class LimitlessTCGScraper:
 
     def _parse_abilities(self, card: PokemonCard, text: str, soup: BeautifulSoup = None):
         """Parse Pokemon abilities with improved text extraction"""
+
         # Method 1: Try to find abilities in structured HTML first
         if soup:
             ability_divs = soup.find_all('div', class_=re.compile('ability|power|body'))
@@ -592,102 +658,273 @@ class LimitlessTCGScraper:
                         })
 
         # Method 2: Pattern-based extraction from text
-        # More comprehensive pattern to capture full ability text
-        ability_pattern = re.compile(
-            r'(?:Ability|Poké-POWER|Poké-BODY)\s*[:\.]?\s*([^\n]+?)[\n\s]+([^⚫]+?)(?=(?:Ability|Poké-POWER|Poké-BODY|[GRWLPFDMNYC]{1,3}\s+[A-Z][a-z]|Weakness|Resistance|Retreat|Pokémon ex rule|V rule|$))',
-            re.MULTILINE | re.DOTALL
-        )
+        # Split the text into lines for better control
+        lines = text.split('\n')
 
-        abilities = ability_pattern.findall(text)
-        for ability_name, ability_text in abilities:
-            ability_name = self._clean_text(ability_name)
-            ability_text = self._clean_text(ability_text)
+        # Find ability sections
+        i = 0
+        while i < len(lines):
+            line = lines[i].strip()
 
-            # Skip if both are empty
-            if not ability_name and not ability_text:
-                continue
+            # Check if this line contains ability indicator
+            if re.search(r'(?:Ability|Poké-POWER|Poké-BODY)\s*[:\.]?', line):
+                # Extract ability name from the same line or next line
+                ability_name = ""
+                ability_text_lines = []
 
-            # Don't add duplicate abilities
-            duplicate = False
-            for existing in card.abilities:
-                if existing['name'] == ability_name:
-                    # Update text if it's longer/better
-                    if len(ability_text) > len(existing['text']):
-                        existing['text'] = ability_text
-                    duplicate = True
-                    break
+                # Try to get ability name from the same line
+                name_match = re.search(r'(?:Ability|Poké-POWER|Poké-BODY)\s*[:\.]?\s*(.+)', line)
+                if name_match:
+                    ability_name = name_match.group(1).strip()
+                    i += 1
+                else:
+                    # Ability name might be on the next line
+                    i += 1
+                    if i < len(lines):
+                        ability_name = lines[i].strip()
+                        i += 1
 
-            if not duplicate and (ability_name or ability_text):
-                card.abilities.append({
-                    'name': ability_name,
-                    'text': ability_text
-                })
+                # Collect ability text until we hit a stopping condition
+                while i < len(lines):
+                    current_line = lines[i].strip()
 
-        # Clean up: Remove any empty abilities
-        card.abilities = [a for a in card.abilities if a.get('name') or a.get('text')]
+                    # Stop conditions
+                    if (not current_line or  # Empty line
+                            re.match(r'^[GRWLPFDMNYC]{1,6}\s+[A-Z]', current_line) or  # Attack pattern
+                            any(marker in current_line for marker in ['Weakness:', 'Resistance:', 'Retreat:',
+                                                                      'Ability', 'Poké-POWER', 'Poké-BODY',
+                                                                      'Pokémon ex rule', 'V rule', 'VMAX rule',
+                                                                      'Illustrated by', 'Regulation Mark'])):
+                        break
+
+                    ability_text_lines.append(current_line)
+                    i += 1
+
+                # Join the ability text
+                ability_text = ' '.join(ability_text_lines)
+                ability_text = self._clean_text(ability_text)
+
+                # Add the ability if we have name or text
+                if ability_name or ability_text:
+                    # Check if this is a duplicate
+                    duplicate = False
+                    for existing in card.abilities:
+                        if existing['name'] == ability_name:
+                            # Update if new text is longer
+                            if len(ability_text) > len(existing['text']):
+                                existing['text'] = ability_text
+                            duplicate = True
+                            break
+
+                    if not duplicate:
+                        card.abilities.append({
+                            'name': ability_name,
+                            'text': ability_text
+                        })
+            else:
+                i += 1
+
+        # Method 3: Alternative pattern for abilities that might be formatted differently
+        if not card.abilities:
+            # Look for ability pattern where name and text are together
+            ability_alt_pattern = re.compile(
+                r'Ability\s*[:\.]?\s*([A-Z][A-Za-z\s]+?)\s*\n\s*([^⚫]+?)(?=(?:\n\s*[GRWLPFDMNYC]{1,6}\s+[A-Z]|Weakness|Resistance|Retreat|$))',
+                re.MULTILINE | re.DOTALL
+            )
+
+            matches = ability_alt_pattern.findall(text)
+            for name, text_content in matches:
+                name = self._clean_text(name)
+                text_content = self._clean_text(text_content)
+
+                if name or text_content:
+                    card.abilities.append({
+                        'name': name,
+                        'text': text_content
+                    })
+
+        # Clean up: Remove any malformed abilities
+        valid_abilities = []
+        for ability in card.abilities:
+            # Filter out abilities where the name is clearly part of the text
+            if ability['name'] and len(ability['name']) < 50:  # Reasonable name length
+                # Check if name looks like it's actually part of text (all lowercase after first word)
+                name_words = ability['name'].split()
+                if len(name_words) == 1 or (len(name_words) > 1 and name_words[1][0].isupper()):
+                    valid_abilities.append(ability)
+
+        card.abilities = valid_abilities
 
     def _parse_attacks(self, card: PokemonCard, text: str):
-        """Parse Pokemon attacks with improved effect text capture"""
-        # Try multiple patterns to capture attacks with their full effect text
+        """Parse Pokemon attacks with improved effect text capture and validation"""
 
-        # Pattern 1: More comprehensive pattern that captures attack effects
-        attack_pattern = re.compile(
-            r'([GRWLPFDMNYC]+)\s+([A-Z][A-Za-z\s]+?)\s+(\d+\+?)\s*\n?([^⚫\n]+(?:\n[^⚫\n]+)*?)(?=(?:[GRWLPFDMNYC]+\s+[A-Z]|Weakness|Resistance|Retreat|Illustrated|$))',
-            re.MULTILINE
-        )
+        # Split text into lines for better control
+        lines = text.split('\n')
 
-        attacks = attack_pattern.findall(text)
+        # Find where attacks section starts and ends
+        attack_start_idx = -1
+        attack_end_idx = len(lines)
 
-        # If no attacks found, try alternative pattern
-        if not attacks:
-            # Pattern 2: Simpler pattern for basic attacks
-            attack_pattern2 = re.compile(
-                r'([GRWLPFDMNYC]{1,4})\s+([A-Z][a-z]+(?:\s+[A-Z]?[a-z]+)*)\s+(\d+\+?)',
+        # Find the start of attacks section
+        for i, line in enumerate(lines):
+            line = line.strip()
+            if re.match(r'^[GRWLPFDMNYC]{1,6}\s+[A-Z]', line) and 'HP' not in line:
+                # Verify it's not metadata
+                if not any(skip in line for skip in
+                           ['Price', 'Buy', 'TCG', '$', '€', 'EUR', 'USD', 'Regulation', 'Illustrated']):
+                    attack_start_idx = i
+                    break
+
+        # Find the end of attacks section
+        if attack_start_idx >= 0:
+            for i in range(attack_start_idx, len(lines)):
+                line = lines[i].strip()
+                if any(marker in line for marker in ['Weakness:', 'Resistance:', 'Retreat:',
+                                                     'Illustrated by', 'Regulation Mark', 'Price', 'Buy on',
+                                                     '$', '€', 'EUR', 'USD', '#']):
+                    attack_end_idx = i
+                    break
+
+        attacks = []
+
+        if attack_start_idx >= 0:
+            # Process lines in the attacks section
+            i = attack_start_idx
+            while i < attack_end_idx:
+                line = lines[i].strip()
+
+                # Check if this is an attack line
+                attack_match = re.match(r'^([GRWLPFDMNYC]{1,6})\s+([A-Z][A-Za-z\s]+?)(?:\s+(\d+\+?))?$', line)
+
+                if attack_match:
+                    cost = attack_match.group(1)
+                    name_and_damage = attack_match.group(2).strip()
+                    damage = attack_match.group(3) if attack_match.group(3) else ""
+
+                    # Validate attack name - exclude common metadata patterns
+                    if any(exclude in name_and_damage for exclude in ['EUR', 'USD', 'GBP', '#', 'Destined', 'Rivals',
+                                                                      'Paradox', 'Temporal', 'Forces', 'Shrouded',
+                                                                      'Stellar', 'Crown', 'Surging', 'Sparks']):
+                        i += 1
+                        continue
+
+                    # Parse attack name (usually 1-4 words)
+                    name_words = name_and_damage.split()
+                    attack_name = []
+
+                    for word in name_words:
+                        if word[0].isupper() and len(attack_name) < 4:
+                            # Skip single letter "words" that might be currency codes
+                            if len(word) > 1 or word in ['X', 'Y', 'Z', 'G']:
+                                attack_name.append(word)
+                        else:
+                            break
+
+                    attack_name_str = ' '.join(attack_name)
+
+                    # Validate the attack name
+                    if len(attack_name_str) < 3 or len(attack_name_str) > 30:
+                        i += 1
+                        continue
+
+                    # Skip if attack name is just numbers or looks like metadata
+                    if re.match(r'^\d+$', attack_name_str) or attack_name_str in ['EUR', 'USD', 'GBP']:
+                        i += 1
+                        continue
+
+                    # Collect effect text
+                    effect_lines = []
+                    i += 1
+
+                    # Gather all lines until the next attack or section boundary
+                    while i < attack_end_idx:
+                        next_line = lines[i].strip()
+
+                        # Check if we've hit another attack
+                        if re.match(r'^[GRWLPFDMNYC]{1,6}\s+[A-Z]', next_line):
+                            break
+
+                        # Check for section boundaries or metadata
+                        if any(marker in next_line for marker in ['Weakness:', 'Resistance:', 'Retreat:',
+                                                                  '#', 'EUR', 'USD', 'Destined Rivals',
+                                                                  'Stellar Crown', 'Temporal Forces']):
+                            break
+
+                        # Add non-empty lines to effect
+                        if next_line:
+                            effect_lines.append(next_line)
+
+                        i += 1
+
+                    # Join effect text
+                    effect_text = ' '.join(effect_lines)
+                    effect_text = self._clean_text(effect_text)
+
+                    # Parse energy cost into array format
+                    cost_array = list(cost)
+                    energy_types = []
+                    for energy_char in cost_array:
+                        if energy_char in self.ENERGY_SYMBOLS:
+                            energy_types.append(self.ENERGY_SYMBOLS[energy_char])
+                        else:
+                            energy_types.append('Colorless')
+
+                    # Add the attack only if it passes validation
+                    attacks.append({
+                        'cost': cost_array,
+                        'name': attack_name_str,
+                        'damage': damage,
+                        'text': effect_text,
+                        'energy_types': energy_types
+                    })
+                else:
+                    i += 1
+
+        # Fallback: If no attacks found, try a simpler regex approach
+        if not attacks and card.card_type == 'Pokemon':
+            attacks_section = '\n'.join(lines[attack_start_idx:attack_end_idx]) if attack_start_idx >= 0 else text
+
+            # Match attack pattern with lookahead to capture effect text
+            pattern = re.compile(
+                r'([GRWLPFDMNYC]{1,6})\s+([A-Z][A-Za-z\s]+?)(?:\s+(\d+\+?))?\s*\n((?:(?![GRWLPFDMNYC]{1,6}\s+[A-Z]|Weakness:|Resistance:|Retreat:|#\d+|EUR|USD).+\n?)*)',
                 re.MULTILINE
             )
-            simple_attacks = attack_pattern2.findall(text)
 
-            # For simple attacks, try to find effect text after damage
-            for cost, name, damage in simple_attacks:
-                # Look for text after this attack
-                effect_pattern = re.compile(
-                    rf'{re.escape(name)}\s+{re.escape(damage)}\s*\n?([^⚫\n]+(?:\n[^⚫\n]+)*?)(?=(?:[GRWLPFDMNYC]+\s+[A-Z]|Weakness|Resistance|Retreat|Illustrated|$))',
-                    re.MULTILINE | re.DOTALL
-                )
-                effect_match = effect_pattern.search(text)
-                effect = effect_match.group(1).strip() if effect_match else ""
-                attacks.append((cost, name, damage, effect))
+            for match in pattern.finditer(attacks_section):
+                cost = match.group(1)
+                name = match.group(2).strip()
+                damage = match.group(3) if match.group(3) else ""
+                effect = match.group(4).strip() if match.group(4) else ""
 
-        for cost, name, damage, effect in attacks:
-            cost = cost.strip()
-            name = self._clean_text(name)
-            damage = damage.strip()
-            effect = self._clean_text(effect)
+                # Validate attack name
+                if any(exclude in name for exclude in ['EUR', 'USD', '#', 'Destined', 'Rivals']):
+                    continue
 
-            # Validate attack name
-            if len(name) < 50 and not re.search(r'Pokémon|Stage|HP|Weakness|Resistance', name):
-                # Parse energy cost into array format for consistency
-                cost_array = list(cost)  # Split into individual characters
-                energy_types = []
-                for energy_char in cost_array:
-                    if energy_char in self.ENERGY_SYMBOLS:
-                        energy_types.append(self.ENERGY_SYMBOLS[energy_char])
+                # Clean up name
+                name_words = name.split()
+                clean_name = []
+                for word in name_words:
+                    if word[0].isupper() and len(clean_name) < 4 and len(word) > 1:
+                        clean_name.append(word)
                     else:
-                        energy_types.append('Colorless')
+                        break
 
-                # Clean up effect text - remove any trailing metadata
-                if effect:
-                    # Remove common ending patterns
-                    effect = re.sub(r'\s*(Weakness|Resistance|Retreat|Illustrated by).*$', '', effect, flags=re.IGNORECASE)
-                    effect = effect.strip()
+                name = ' '.join(clean_name)
 
-                card.attacks.append({
-                    'cost': cost_array,  # Now always an array
-                    'name': name,
-                    'damage': damage,
-                    'text': effect,
-                    'energy_types': energy_types
-                })
+                if len(name) >= 3 and len(name) <= 30:
+                    cost_array = list(cost)
+                    energy_types = [self.ENERGY_SYMBOLS.get(c, 'Colorless') for c in cost_array]
+
+                    attacks.append({
+                        'cost': cost_array,
+                        'name': name,
+                        'damage': damage,
+                        'text': self._clean_text(effect),
+                        'energy_types': energy_types
+                    })
+
+        # Assign the parsed attacks to the card
+        card.attacks = attacks
 
     def _parse_flavor_text(self, card: PokemonCard, text: str, soup: BeautifulSoup):
         """Parse flavor text for Pokemon cards"""
@@ -808,40 +1045,40 @@ class LimitlessTCGScraper:
                 if energy_name in card.name:
                     card.pokemon_type = energy_type  # Store the energy color type here
                     break
-        elif 'Special Energy' in text:
-            card.energy_type = 'Special'
         else:
             # Default to Special for non-basic energy
             card.energy_type = 'Special'
 
-        # Extract energy effect for special energy
-        if card.energy_type == 'Special':
-            # Try to find the effect text
-            effect_pattern = re.compile(
-                r'Special Energy\s*\n+([^⚫]+?)(?=(?:Illustrated by|Regulation Mark|$))',
-                re.IGNORECASE | re.MULTILINE | re.DOTALL
-            )
+        # Check for ACE SPEC Special Energy
+        if 'ACE SPEC' in text:
+            card.rules.append("ACE SPEC rule — You can't have more than 1 ACE SPEC card in your deck.")
 
-            match = effect_pattern.search(text)
-            if match:
-                card.card_text = self._clean_text(match.group(1))
-            else:
-                # Fallback: extract main text
-                text_lines = text.split('\n')
-                effect_lines = []
-                capture = False
+        # Extract energy effect text
+        # Try to find the effect text after the card name/type
+        effect_lines = []
+        lines = text.split('\n')
+        capture = False
 
-                for line in text_lines:
-                    line = line.strip()
-                    if 'Energy' in line and card.name in line:
-                        capture = True
-                        continue
-                    if capture and line:
-                        if any(x in line for x in ['Illustrated by', 'Regulation Mark', '©']):
-                            break
-                        effect_lines.append(line)
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
 
-                card.card_text = ' '.join(effect_lines)
+            # Start capturing after we see the card name or "Special Energy"
+            if (card.name in line or 'Special Energy' in line) and not capture:
+                capture = True
+                continue
+
+            if capture:
+                # Stop at metadata
+                if any(stop in line for stop in ['Illustrated by', 'Regulation Mark', '©', 'legal', 'Price']):
+                    break
+                # Don't include ACE SPEC line as it's handled separately
+                if 'ACE SPEC' not in line:
+                    effect_lines.append(line)
+
+        if effect_lines:
+            card.card_text = ' '.join(effect_lines)
 
     def _parse_common_attributes(self, card: PokemonCard, text: str):
         """Parse attributes common to all card types"""
@@ -1047,45 +1284,6 @@ class LimitlessTCGScraper:
 
         logger.info(f"Data saved to {filename}")
 
-    def save_to_csv(self, filename: str = 'pokemon_tcg_standard_2025.csv'):
-        """Save scraped data to CSV file"""
-        import csv
-
-        with open(filename, 'w', newline='', encoding='utf-8') as f:
-            fieldnames = [
-                'name', 'set_code', 'number', 'card_type', 'pokemon_type', 'hp', 'stage', 'suffix',
-                'evolves_from', 'weakness', 'resistance', 'retreat_cost', 'retreat_cost_array',
-                'regulation_mark', 'rarity', 'artist', 'trainer_type', 'energy_type', 'rules'
-            ]
-            writer = csv.DictWriter(f, fieldnames=fieldnames)
-            writer.writeheader()
-
-            for card in self.cards_data:
-                row = {
-                    'name': card.name,
-                    'set_code': card.set_code,
-                    'number': card.number,
-                    'card_type': card.card_type,
-                    'pokemon_type': card.pokemon_type,
-                    'hp': card.hp,
-                    'stage': card.stage,
-                    'suffix': card.suffix,
-                    'evolves_from': card.evolves_from,
-                    'weakness': card.weakness,
-                    'resistance': card.resistance,
-                    'retreat_cost': card.retreat_cost,
-                    'retreat_cost_array': ','.join(card.retreat_cost_array) if card.retreat_cost_array else '',
-                    'regulation_mark': card.regulation_mark,
-                    'rarity': card.rarity,
-                    'artist': card.artist,
-                    'trainer_type': card.trainer_type,
-                    'energy_type': card.energy_type,
-                    'rules': ' | '.join(card.rules) if card.rules else ''
-                }
-                writer.writerow(row)
-
-        logger.info(f"Data saved to {filename}")
-
 
 def main():
     """Main execution function"""
@@ -1097,7 +1295,6 @@ def main():
 
         # Save data in multiple formats
         scraper.save_to_json()
-        scraper.save_to_csv()
 
         # Print summary statistics
         print("\n=== Scraping Summary ===")
